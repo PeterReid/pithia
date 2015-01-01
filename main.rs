@@ -61,7 +61,7 @@ impl UiRunner {
     
     fn run(&mut self) {
         loop {
-            if let Some(interrupt) = self.cpu.run(40) {
+            if let Some(interrupt) = self.cpu.run(800) {
                 println!("Interrupt: {}", interrupt);
                 match interrupt {
                     FaultType::Syscall => {
@@ -72,7 +72,7 @@ impl UiRunner {
                         self.cpu.clear_fault();
                     },
                     _ => {
-                        
+                        break;
                     }
                 }
             } else {
@@ -166,6 +166,6 @@ fn run_window(code: Vec<u8>) {
 }
 
 fn main() {
-    let contents = File::open(&Path::new("asm/mips1-repositioned.bin")).read_to_end().unwrap_or_else(|_| { panic!("Could not read MIPS code"); } );
+    let contents = File::open(&Path::new("asm/withmain-binned.bin")).read_to_end().unwrap_or_else(|_| { panic!("Could not read MIPS code"); } );
     run_window(contents);
 }
