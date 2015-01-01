@@ -1,0 +1,1 @@
+rustc -L gridui -L gridui\rust-windows -L mips_cpu main.rs -o tb.exe
