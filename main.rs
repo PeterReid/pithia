@@ -166,6 +166,6 @@ fn run_window(code: Vec<u8>) {
 }
 
 fn main() {
-    let contents = File::open(&Path::new("asm/withmain-binned.bin")).read_to_end().unwrap_or_else(|_| { panic!("Could not read MIPS code"); } );
+    let contents = File::open(&Path::new("page.bin")).read_to_end().unwrap_or_else(|_| { panic!("Could not read MIPS code"); } );
     run_window(contents);
 }
