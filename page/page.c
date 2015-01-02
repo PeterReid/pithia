@@ -16,16 +16,37 @@ static void display_screen(int *x) {
         : : "r"(x) : "$2", "$3", "memory");
 }
 
+typedef struct glyph {
+  int ch;
+  int fg;
+  int bg;
+} glyph;
+
+#define SCREEN_WIDTH 20
+#define SCREEN_HEIGHT 10
+#define SCREEN_CELLS (SCREEN_WIDTH*SCREEN_HEIGHT)
+
+typedef struct screen {
+  int width;
+  int height;
+  glyph gs[SCREEN_CELLS];
+} screen;
+
+
 int __start() {
-  int screen[5];
-  screen[0] = 1; // cols
-  screen[1] = 1; // height;
-  screen[2] = 0x1000;
-  screen[3] = 0x00ff0000;
-  screen[4] = 0;
+  screen s;
+  int i;
+  s.width = SCREEN_WIDTH;
+  s.height = SCREEN_HEIGHT;
+  for ( i=0; i<SCREEN_CELLS; i++ ){
+    s.gs[i].ch = 10+(i%5);
+    s.gs[i].fg = 0xff;
+    s.gs[i].bg = 0;
+  }
+  
   while(1) {
-    screen[2] = 0x1000 + (get_input()<<4); 
-    display_screen(screen);
+    s.gs[0].ch = 0x1000 + (get_input()<<4); 
+    display_screen(&s.width);
   }
   return 0;
 }

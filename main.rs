@@ -61,7 +61,7 @@ impl UiRunner {
     
     fn run(&mut self) {
         loop {
-            if let Some(interrupt) = self.cpu.run(800) {
+            if let Some(interrupt) = self.cpu.run(800000) {
                 println!("Interrupt: {}", interrupt);
                 match interrupt {
                     FaultType::Syscall => {
@@ -108,7 +108,6 @@ impl UiRunner {
                         background: self.cpu.read_mem(glyph_start_address + 8),
                     }
                 });
-                println!("got {}", glyphs);
                 self.ui.send_screen(Screen{
                     width: width as uint,
                     glyphs: glyphs
