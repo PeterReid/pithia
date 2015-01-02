@@ -16,6 +16,17 @@ static void display_screen(int *x) {
         : : "r"(x) : "$2", "$3", "memory");
 }
 
+static void get_cursor_coords(int *x, int *y) {
+  int xval, yval;
+  __asm volatile("addiu $2, $0, 3\n\t" // Prepare for syscall 3
+        "syscall\n\t"
+        "addu %0, $2, $0\n\t"
+        "addu %1, $3, $0\n\t"
+        : "=r"(xval), "=r"(yval): : "$2", "$3");
+  *x = xval;
+  *y = yval;
+}
+
 typedef struct glyph {
   int ch;
   int fg;
@@ -46,6 +57,11 @@ int __start() {
   
   while(1) {
     s.gs[0].ch = 0x1000 + (get_input()<<4); 
+    int x, y;
+    get_cursor_coords(&x, &y);
+    if (x>=0 && x<SCREEN_WIDTH&& y>=0 && y<SCREEN_HEIGHT) {
+      s.gs[x + y*SCREEN_WIDTH].bg = 0xffffff;
+    }
     display_screen(&s.width);
   }
   return 0;

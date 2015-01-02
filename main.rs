@@ -121,6 +121,11 @@ impl UiRunner {
                 }
                 None
             }
+            3 => { // Get cursor coordinates
+                self.cpu.regs[2] = self.cursor_x;
+                self.cpu.regs[3] = self.cursor_y;
+                None
+            }
             _ => {
                 // Maybe crash the application here?
                 println!("Unrecognized syscall: {}", syscall_number);
