@@ -56,13 +56,17 @@ int __start() {
   }
   
   while(1) {
-    s.gs[0].ch = 0x1000 + (get_input()<<4); 
-    int x, y;
-    get_cursor_coords(&x, &y);
-    if (x>=0 && x<SCREEN_WIDTH&& y>=0 && y<SCREEN_HEIGHT) {
-      s.gs[x + y*SCREEN_WIDTH].bg = 0xffffff;
-    }
     display_screen(&s.width);
+    int event = get_input();
+    
+    s.gs[0].ch = 0x1000 + (event<<4); 
+    if (event==2) {
+      int x, y;
+      get_cursor_coords(&x, &y);
+      if (x>=0 && x<SCREEN_WIDTH&& y>=0 && y<SCREEN_HEIGHT) {
+        s.gs[x + y*SCREEN_WIDTH].bg = (s.gs[x + y*SCREEN_WIDTH].bg+0x40) & 0xff;
+      }
+    }
   }
   return 0;
 }

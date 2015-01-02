@@ -71,6 +71,13 @@ impl UiRunner {
                         }
                         self.cpu.clear_fault();
                     },
+                    FaultType::InvalidInstruction => {
+                        println!("Invalid instruction from CPU");
+                        let pc = self.cpu.pc;
+                        println!("  Address: 0x{:x}", pc);
+                        println!("  Instruction: 0x{:x}", self.cpu.read_mem(pc));
+                        break;
+                    },
                     _ => {
                         break;
                     }
