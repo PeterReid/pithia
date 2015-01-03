@@ -123,7 +123,10 @@ impl UiRunner {
             }
             2 => { // Get input event
                 match self.get_application_input_event() {
-                    Some(input_event_type) => { self.cpu.regs[2] = input_event_type; }
+                    Some((input_event_type, param)) => {
+                        self.cpu.regs[2] = input_event_type;
+                        self.cpu.regs[3] = param;
+                    }
                     None => { return Some(ApplicationException::ClosedByUi); }
                 }
                 None
@@ -142,7 +145,7 @@ impl UiRunner {
         
     }
     
-    fn get_application_input_event(&mut self) -> Option<u32> {
+    fn get_application_input_event(&mut self) -> Option<(u32, u32)> {
         loop {
             match self.ui.get_input_event() {
                 InputEvent::Close => { return None; }
@@ -150,19 +153,19 @@ impl UiRunner {
                     println!("Resized to {} by {}", cols, rows);
                     self.screen_width = cols;
                     self.screen_height = rows;
-                    return Some(1);
+                    return Some((1, 0));
                 }
                 InputEvent::MouseDown(col, row) => {
                     self.cursor_down = true;
                     self.cursor_x = col;
                     self.cursor_y = row;
-                    return Some(2);
+                    return Some((2, 0));
                 }
                 InputEvent::MouseUp(col, row) => {
                     self.cursor_down = false;
                     self.cursor_x = col;
                     self.cursor_y = row;
-                    return Some(3);
+                    return Some((3, 0));
                 }
                 x => {
                     println!("{}", x);

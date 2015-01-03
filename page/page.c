@@ -5,7 +5,7 @@ static int get_input() {
   __asm volatile("addiu $2, $0, 2\n\t" // Prepare for syscall 2
         "syscall\n\t"
         "addu %0, $2, $0\n\t"
-        : "=r"(x) : : "$2");
+        : "=r"(x) : : "$2", "$3");
   return x; 
 }
 
@@ -51,7 +51,7 @@ int __start() {
   s.height = SCREEN_HEIGHT;
   for ( i=0; i<SCREEN_CELLS; i++ ){
     s.gs[i].ch = 10+(i%5);
-    s.gs[i].fg = 0xff;
+    s.gs[i].fg = 0x00ff00;
     s.gs[i].bg = 0;
   }
   
