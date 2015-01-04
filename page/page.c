@@ -27,6 +27,17 @@ static void get_cursor_coords(int *x, int *y) {
   *y = yval;
 }
 
+static void get_screen_size(int *width, int *height) {
+  int widthval, heightval;
+  __asm volatile("addiu $2, $0, 4\n\t" // Prepare for syscall 4
+        "syscall\n\t"
+        "addu %0, $2, $0\n\t"
+        "addu %1, $3, $0\n\t"
+        : "=r"(widthval), "=r"(heightval): : "$2", "$3");
+  *width = widthval;
+  *height = heightval;
+}
+
 typedef struct glyph {
   int ch;
   int fg;
