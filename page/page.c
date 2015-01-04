@@ -3,9 +3,20 @@
 static int get_input() {
   int x;
   __asm volatile("addiu $2, $0, 2\n\t" // Prepare for syscall 2
+        "not $3, $0\n\t" // set maximum timeout
         "syscall\n\t"
         "addu %0, $2, $0\n\t"
         : "=r"(x) : : "$2", "$3");
+  return x; 
+}
+
+static int get_input_with_timeout(unsigned int timeout) {
+  int x;
+  __asm volatile("addiu $2, $0, 2\n\t" // Prepare for syscall 2
+        "move $3, %1\n\t" // set maximum timeout
+        "syscall\n\t"
+        "addu %0, $2, $0\n\t"
+        : "=r"(x) : "r"(timeout) : "$2", "$3");
   return x; 
 }
 
@@ -38,6 +49,15 @@ static void get_screen_size(int *width, int *height) {
   *height = heightval;
 }
 
+static unsigned int rand_u32() {
+  unsigned int res;
+  __asm volatile("addiu $2, $0, 5\n\t" // Prepare for syscall 5
+        "syscall\n\t"
+        "addu %0, $2, $0\n\t"
+        : "=r"(res) : : "$2", "$3");
+  return res;
+}
+
 typedef struct glyph {
   int ch;
   int fg;
@@ -68,9 +88,10 @@ int __start() {
   
   while(1) {
     display_screen(&s.width);
-    int event = get_input();
+    int event = get_input_with_timeout(200);
     
     s.gs[0].ch = 0x1000 + (event<<4); 
+    s.gs[1].ch = 10 + (rand_u32()%10);
     if (event==2) {
       int x, y;
       get_cursor_coords(&x, &y);
