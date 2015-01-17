@@ -84,10 +84,9 @@ uint32_t unicode_to_glyphcode(uint32_t unicode) {
     return 0x1000 + ((unicode-'a')<<4);
   }else if( unicode>='A' && unicode<='Z' ){
     return 0x3000 + ((unicode-'A')<<4);
-  }else if( unicode==' ' ){
-    return 0;
   }
   switch( unicode ){
+    case ' ': return 0;
     case '_': return 1;
     case '-': return 2;
     case '.': return 3;
