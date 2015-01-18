@@ -75,7 +75,35 @@ typedef struct screen {
   glyph gs[SCREEN_CELLS];
 } screen;
 
-uint8_t file_contents[] = "3.1415926 is PI ";
+uint8_t file_contents[] = 
+  "Four score and seven years ago our fathers brought forth on this continent,"
+  " a new nation, conceived in Liberty, and dedicated to the proposition that "
+  "all men are created equal.\n"
+  "\n"
+  "Now we are engaged in a great civil war, testing whether that nation, or an"
+  "y nation so conceived and so dedicated, can long endure. We are met on a gr"
+  "eat battle-field of that war. We have come to dedicate a portion of that fi"
+  "eld, as a final resting place for those who here gave their lives that that"
+  " nation might live. It is altogether fitting and proper that we should do t"
+  "his.\n"
+  "\n"
+  "But, in a larger sense, we can not dedicate -- we can not consecrate -- we "
+  "can not hallow -- this ground. The brave men, living and dead, who struggle"
+  "d here, have consecrated it, far above our poor power to add or detract. Th"
+  "e world will little note, nor long remember what we say here, but it can ne"
+  "ver forget what they did here. It is for us the living, rather, to be dedic"
+  "ated here to the unfinished work which they who fought here have thus far s"
+  "o nobly advanced. It is rather for us to be here dedicated to the great tas"
+  "k remaining before us -- that from these honored dead we take increased dev"
+  "otion to that cause for which they gave the last full measure of devotion -"
+  "- that we here highly resolve that these dead shall not have died in vain -"
+  "- that this nation, under God, shall have a new birth of freedom -- and tha"
+  "t government of the people, by the people, for the people, shall not perish"
+  " from the earth.\n"
+  "\n"
+  "Abraham Lincoln\n"
+  "November 19, 1863"
+  ;
 
 uint32_t unicode_to_glyphcode(uint32_t unicode) {
   if( unicode>='0' && unicode<='9' ){
@@ -100,15 +128,74 @@ uint32_t unicode_to_glyphcode(uint32_t unicode) {
   return 999;
 }
 
-//int read_utf8_char(int8_t
-void utf7_display(screen *dest, uint32_t x, uint32_t y, uint8_t *str, uint32_t len) {
-  uint32_t i;
-  uint32_t write_idx = dest->width*y + x;
-  for( i=0; i<len; i++ ){
-    glyph *g = &dest->gs[write_idx+i];
-    g->ch = unicode_to_glyphcode((uint32_t)str[i]);
-    g->fg = 0xff;
-    g->bg = 0;
+const uint8_t *first_utf8(const uint8_t *text, uint32_t *dest) {
+  // TODO: Handle multibyte characters
+  *dest = text[0];
+  return text + 1;
+}
+
+void maybe_put_glyphcode(screen *dest, uint32_t x, uint32_t y, uint32_t glyphcode){
+  if( dest && x>=0 && y>=0 && x<dest->width && y<dest->height ){
+    dest->gs[x + y*dest->width].ch = glyphcode;
+  }
+}
+void maybe_put_glyph(screen *dest, uint32_t x, uint32_t y, glyph g){
+  if( dest && x>=0 && y>=0 && x<dest->width && y<dest->height ){
+    dest->gs[x + y*dest->width] = g;
+  }
+}
+const uint8_t *draw_text_wrappingly(
+  screen *dest, 
+  const uint8_t *text,
+  uint32_t left, uint32_t top, uint32_t width, uint32_t height
+){
+  uint32_t x, y;
+  uint32_t right, bottom; // exclusive
+  uint32_t unicode;
+  const uint8_t *last_after_whitespace;
+  uint32_t last_after_whitespace_x = 0;
+  uint32_t glyphcode;
+  
+  
+  right = left + width;
+  bottom = top + height;
+  for( y=top; y<bottom; y++ ){
+    last_after_whitespace = 0;
+    for( x=left; x<right; x++ ){
+      text = first_utf8(text, &unicode);
+      if( unicode==0 ) break;
+      glyphcode = unicode_to_glyphcode(unicode);
+      if( glyphcode==0 ){
+        last_after_whitespace = text;
+        last_after_whitespace_x = x+1;
+      }
+      maybe_put_glyphcode(dest, x, y, glyphcode);
+    }
+    
+    if( last_after_whitespace ) {// If we had whitespace somewhere in this line, we can wrap.
+      first_utf8(text, &unicode);
+      if( unicode_to_glyphcode(unicode) ){ // If we're not on whitepace now, we want to wrap.
+        for( x=last_after_whitespace_x; x<right; x++ ){
+          maybe_put_glyphcode(dest, x, y, 0);
+        }
+        text = last_after_whitespace;
+      }
+    }
+  }
+  
+  return text;
+}
+
+void fill_rect( screen *dest, uint32_t left, uint32_t top, uint32_t w, uint32_t h, uint32_t bg, uint32_t fg ){
+  uint32_t x, y;
+  glyph g;
+  g.ch = 0;
+  g.bg = bg;
+  g.fg = fg;
+  for( y=top; y<top+h; y++) {
+    for( x=left; x<left+w; x++ ){
+      maybe_put_glyph(dest, x, y, g);
+    }
   }
 }
 
@@ -123,7 +210,8 @@ int __start() {
     s.gs[i].bg = 0;
   }
   
-  utf7_display(&s, 3, 3, file_contents, 16);
+  fill_rect(&s, 0,2, 20,6, 0, 0xffffff);
+  draw_text_wrappingly(&s, file_contents, 2,3, 16,4);
   
   while(1) {
     display_screen(&s.width);
