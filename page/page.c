@@ -163,6 +163,7 @@ const uint8_t *draw_text_wrappingly(
   uint32_t last_after_whitespace_x = 0;
   uint32_t glyphcode;
   
+  if( *text==0 ) return text; // end of document
   
   right = left + width;
   bottom = top + height;
@@ -177,7 +178,19 @@ const uint8_t *draw_text_wrappingly(
     last_after_whitespace = 0;
     for( x=left; x<right; x++ ){
       text = first_utf8(text, &unicode);
-      if( unicode==0 ) break;
+      if( unicode==0 ){
+        // blank out the remaining area
+        for( ; x<right; x++ ){
+          maybe_put_glyphcode(dest, x, y, 0);
+        }
+        y++;
+        for(; y<bottom; y++ ){
+          for( x=left; x<right; x++ ){
+            maybe_put_glyphcode(dest, x, y, 0);
+          }
+        }
+        break;
+      }
       if( unicode==13 ){ // carriage return
         const uint8_t *after_crlf = first_utf8(text, &unicode);
         if( unicode==10 ){ // crlf detected
@@ -228,9 +241,45 @@ void fill_rect( screen *dest, uint32_t left, uint32_t top, uint32_t w, uint32_t 
   }
 }
 
+const uint8_t *previous_utf8(const uint8_t *text){
+  //do{
+    text--;
+  //}while( (*text & 0x80)==0x80 );
+  //return text;
+  return text;
+}
+
 const uint8_t *next_line(const uint8_t *text, uint32_t line_width){
   return draw_text_wrappingly(0, text, 0,0, line_width, 1);
 }
+
+const uint8_t *previous_line(const uint8_t *text, uint32_t line_width){
+  const uint8_t *first_of_line;
+  uint32_t unicode;
+  const uint8_t *line_begin;
+  
+  first_of_line = previous_utf8(text);
+  //if( !*first_of_line ) return text; // beginning of document
+  while( 1 ){
+    first_of_line = previous_utf8(first_of_line);
+    unicode = *first_of_line;//first_utf8(previous_char, &unicode);
+    if( unicode=='\0' || unicode=='\r' || unicode=='\n' ){
+      first_of_line = first_utf8(first_of_line, &unicode);
+      break;
+    }
+  }
+  
+  // Step forward until we get to text (at least)
+  line_begin = first_of_line;
+  while( 1 ){
+    const uint8_t *next_line_begin = next_line(line_begin, line_width);
+    if( next_line_begin>=text || next_line_begin<=line_begin ) break;
+    line_begin = next_line_begin;
+  }
+  
+  return line_begin;
+}
+
 
 int __start() {
   screen s;
@@ -251,8 +300,14 @@ int __start() {
     draw_text_wrappingly(&s, text_cursor, 2,3, line_width,4);
     display_screen(&s.width);
     input_event evt = get_input();
-    if( evt.type==INPUT_EVENT_KEYDOWN && evt.param==(0x1000|(('s'-'a')<<4)) ){
-      text_cursor = next_line(text_cursor, line_width);
+    if( evt.type==INPUT_EVENT_KEYDOWN ){
+      if( evt.param==(0x1000|(('s'-'a')<<4)) ){
+        const uint8_t *next = next_line(text_cursor, line_width);
+        if( *next ) text_cursor = next;
+      }else if( evt.param==(0x1000|(('w'-'a')<<4))){
+        const uint8_t *prev = previous_line(text_cursor, line_width);
+        if( *prev ) text_cursor = prev;
+      }
     }
   }
   
