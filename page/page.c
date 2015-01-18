@@ -252,7 +252,9 @@ const uint8_t *previous_utf8(const uint8_t *text){
 }
 
 const uint8_t *next_line(const uint8_t *text, uint32_t line_width){
-  return draw_text_wrappingly(0, text, 0,0, line_width, 1);
+  const uint8_t *maybe_next = draw_text_wrappingly(0, text, 0,0, line_width, 1);
+  if( *maybe_next ) return maybe_next;
+  return text;
 }
 
 const uint8_t *previous_line(const uint8_t *text, uint32_t line_width){
@@ -261,7 +263,7 @@ const uint8_t *previous_line(const uint8_t *text, uint32_t line_width){
   const uint8_t *line_begin;
   
   first_of_line = previous_utf8(text);
-  //if( !*first_of_line ) return text; // beginning of document
+  if( !*first_of_line ) return text; // beginning of document
   while( 1 ){
     first_of_line = previous_utf8(first_of_line);
     unicode = *first_of_line;//first_utf8(previous_char, &unicode);
@@ -296,6 +298,7 @@ int __start() {
   
   uint32_t line_width = 16;
   
+  const uint8_t *resizing_around = 0;
   const uint8_t *text_cursor = file_contents + 1;
   while(1) {
     draw_text_wrappingly(&s, text_cursor, 1,1, line_width,s.height-2);
@@ -305,9 +308,10 @@ int __start() {
       if( evt.param==(0x1000|(('s'-'a')<<4)) ){
         const uint8_t *next = next_line(text_cursor, line_width);
         if( *next ) text_cursor = next;
+        resizing_around = 0;
       }else if( evt.param==(0x1000|(('w'-'a')<<4))){
-        const uint8_t *prev = previous_line(text_cursor, line_width);
-        if( *prev ) text_cursor = prev;
+        text_cursor = previous_line(text_cursor, line_width);
+        resizing_around = 0;
       }
     }else if( evt.type==INPUT_EVENT_RESIZE ){
       uint32_t screen_width, screen_height;
@@ -319,7 +323,17 @@ int __start() {
       line_width = s.width-4;
       fill_rect(&s, 0,0, s.width,s.height, 0, 0xffffff);
       
+      if( resizing_around==0 ){
+        resizing_around = text_cursor;
+      }
+      
+      // We want to keep what they currently had in the top left in view, but still be 
+      // be on a natural line break at this width.
+      const uint8_t *rounded_back = previous_line(resizing_around, line_width);
+      const uint8_t *rounded_up = next_line(rounded_back, line_width);
+      text_cursor = rounded_up <= text_cursor ? rounded_up : rounded_back;
     }
+    
   }
   
   while(1) {
