@@ -75,7 +75,7 @@ typedef struct screen {
   glyph gs[SCREEN_CELLS];
 } screen;
 
-uint8_t file_contents[] = 
+uint8_t file_contents[] = "\0" // leading 0 stops lookback from overrunning
   "Four score and seven years ago our fathers brought forth on this continent,"
   " a new nation, conceived in Liberty, and dedicated to the proposition that "
   "all men are created equal.\n"
@@ -160,10 +160,32 @@ const uint8_t *draw_text_wrappingly(
   right = left + width;
   bottom = top + height;
   for( y=top; y<bottom; y++ ){
+    if( text[-1]!='\r' && text[-1]!='\n' ){ // if we're on a word-wrapped line
+      // trim a single leading space, since the line break looks (kind of) like one.
+      const uint8_t *maybe_next = first_utf8(text, &unicode);
+      if( unicode==' ' ){
+        text = maybe_next;
+      }
+    }
     last_after_whitespace = 0;
     for( x=left; x<right; x++ ){
       text = first_utf8(text, &unicode);
       if( unicode==0 ) break;
+      if( unicode==13 ){ // carriage return
+        const uint8_t *after_crlf = first_utf8(text, &unicode);
+        if( unicode==10 ){ // crlf detected
+          text = after_crlf;
+        }else{
+          unicode = 10; // treat a lone carriage return like a line feed
+        }
+      }
+      if( unicode==10 ){ //line feed
+        while( x<right ){
+          maybe_put_glyphcode(dest, x, y, 0);
+          x++;
+        }
+        break;
+      }
       glyphcode = unicode_to_glyphcode(unicode);
       if( glyphcode==0 ){
         last_after_whitespace = text;
@@ -217,7 +239,7 @@ int __start() {
   uint32_t line_width = 16;
   fill_rect(&s, 0,2, line_width+4,6, 0, 0xffffff);
   
-  const uint8_t *text_cursor = file_contents;
+  const uint8_t *text_cursor = file_contents + 1;
   while(1) {
     draw_text_wrappingly(&s, text_cursor, 2,3, line_width,4);
     display_screen(&s.width);
