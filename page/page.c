@@ -199,6 +199,10 @@ void fill_rect( screen *dest, uint32_t left, uint32_t top, uint32_t w, uint32_t 
   }
 }
 
+const uint8_t *next_line(const uint8_t *text, uint32_t line_width){
+  return draw_text_wrappingly(0, text, 0,0, line_width, 1);
+}
+
 int __start() {
   screen s;
   int i;
@@ -210,8 +214,18 @@ int __start() {
     s.gs[i].bg = 0;
   }
   
-  fill_rect(&s, 0,2, 20,6, 0, 0xffffff);
-  draw_text_wrappingly(&s, file_contents, 2,3, 16,4);
+  uint32_t line_width = 16;
+  fill_rect(&s, 0,2, line_width+4,6, 0, 0xffffff);
+  
+  const uint8_t *text_cursor = file_contents;
+  while(1) {
+    draw_text_wrappingly(&s, text_cursor, 2,3, line_width,4);
+    display_screen(&s.width);
+    int event = get_input();
+    if( event==2 ){
+      text_cursor = next_line(text_cursor, line_width);
+    }
+  }
   
   while(1) {
     display_screen(&s.width);
