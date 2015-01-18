@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#define INPUT_EVENT_RESIZE 1
 #define INPUT_EVENT_KEYDOWN 4
 typedef struct input_event{
   uint32_t type;
@@ -46,7 +47,7 @@ static void get_cursor_coords(int *x, int *y) {
   *y = yval;
 }
 
-static void get_screen_size(int *width, int *height) {
+static void get_screen_size(uint32_t *width, uint32_t *height) {
   int widthval, heightval;
   __asm volatile("addiu $2, $0, 4\n\t" // Prepare for syscall 4
         "syscall\n\t"
@@ -72,8 +73,8 @@ typedef struct glyph {
   int bg;
 } glyph;
 
-#define SCREEN_WIDTH 20
-#define SCREEN_HEIGHT 10
+#define SCREEN_WIDTH 180
+#define SCREEN_HEIGHT 80
 #define SCREEN_CELLS (SCREEN_WIDTH*SCREEN_HEIGHT)
 
 typedef struct screen {
@@ -189,7 +190,7 @@ const uint8_t *draw_text_wrappingly(
             maybe_put_glyphcode(dest, x, y, 0);
           }
         }
-        break;
+        return text;
       }
       if( unicode==13 ){ // carriage return
         const uint8_t *after_crlf = first_utf8(text, &unicode);
@@ -204,6 +205,7 @@ const uint8_t *draw_text_wrappingly(
           maybe_put_glyphcode(dest, x, y, 0);
           x++;
         }
+        last_after_whitespace = 0;
         break;
       }
       glyphcode = unicode_to_glyphcode(unicode);
@@ -283,21 +285,20 @@ const uint8_t *previous_line(const uint8_t *text, uint32_t line_width){
 
 int __start() {
   screen s;
-  int i;
+
   s.width = SCREEN_WIDTH;
   s.height = SCREEN_HEIGHT;
-  for ( i=0; i<SCREEN_CELLS; i++ ){
+  /*for ( i=0; i<SCREEN_CELLS; i++ ){
     s.gs[i].ch = 10+(i%2);
     s.gs[i].fg = 0x00ff00;
     s.gs[i].bg = 0;
-  }
+  }*/
   
   uint32_t line_width = 16;
-  fill_rect(&s, 0,2, line_width+4,6, 0, 0xffffff);
   
   const uint8_t *text_cursor = file_contents + 1;
   while(1) {
-    draw_text_wrappingly(&s, text_cursor, 2,3, line_width,4);
+    draw_text_wrappingly(&s, text_cursor, 1,1, line_width,s.height-2);
     display_screen(&s.width);
     input_event evt = get_input();
     if( evt.type==INPUT_EVENT_KEYDOWN ){
@@ -308,6 +309,16 @@ int __start() {
         const uint8_t *prev = previous_line(text_cursor, line_width);
         if( *prev ) text_cursor = prev;
       }
+    }else if( evt.type==INPUT_EVENT_RESIZE ){
+      uint32_t screen_width, screen_height;
+      get_screen_size(&screen_width, &screen_height);
+      if( screen_height>SCREEN_HEIGHT ) screen_height = SCREEN_HEIGHT;
+      if( screen_width>SCREEN_WIDTH ) screen_width = SCREEN_WIDTH;
+      s.width = screen_width>SCREEN_WIDTH ? SCREEN_WIDTH : screen_width;
+      s.height = screen_height>SCREEN_HEIGHT ? SCREEN_HEIGHT : screen_height;
+      line_width = s.width-4;
+      fill_rect(&s, 0,0, s.width,s.height, 0, 0xffffff);
+      
     }
   }
   
