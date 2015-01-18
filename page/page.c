@@ -1,24 +1,31 @@
 #include <stdio.h>
 #include <stdint.h>
 
-static int get_input() {
-  int x;
+#define INPUT_EVENT_KEYDOWN 4
+typedef struct input_event{
+  uint32_t type;
+  uint32_t param;
+} input_event;
+
+static input_event get_input() {
+  input_event evt;
   __asm volatile("addiu $2, $0, 2\n\t" // Prepare for syscall 2
         "not $3, $0\n\t" // set maximum timeout
         "syscall\n\t"
         "addu %0, $2, $0\n\t"
-        : "=r"(x) : : "$2", "$3");
-  return x; 
+        "addu %1, $3, $0\n\t"
+        : "=r"(evt.type), "=r"(evt.param) : : "$2", "$3");
+  return evt; 
 }
 
-static int get_input_with_timeout(unsigned int timeout) {
-  int x;
+static input_event get_input_with_timeout(unsigned int timeout) {
+  input_event evt;
   __asm volatile("addiu $2, $0, 2\n\t" // Prepare for syscall 2
         "move $3, %1\n\t" // set maximum timeout
         "syscall\n\t"
         "addu %0, $2, $0\n\t"
-        : "=r"(x) : "r"(timeout) : "$2", "$3");
-  return x; 
+        : "=r"(evt.type), "=r"(evt.param) : "r"(timeout) : "$2", "$3");
+  return evt; 
 }
 
 static void display_screen(int *x) {
@@ -243,19 +250,19 @@ int __start() {
   while(1) {
     draw_text_wrappingly(&s, text_cursor, 2,3, line_width,4);
     display_screen(&s.width);
-    int event = get_input();
-    if( event==2 ){
+    input_event evt = get_input();
+    if( evt.type==INPUT_EVENT_KEYDOWN && evt.param==(0x1000|(('s'-'a')<<4)) ){
       text_cursor = next_line(text_cursor, line_width);
     }
   }
   
   while(1) {
     display_screen(&s.width);
-    int event = get_input_with_timeout(200);
+    input_event evt = get_input_with_timeout(200);
     
-    s.gs[0].ch = 0x1000 + (event<<4); 
+    s.gs[0].ch = 0x1000 + (evt.type<<4); 
     s.gs[1].ch = 10 + (rand_u32()%10);
-    if (event==2) {
+    if (evt.type==2) {
       int x, y;
       get_cursor_coords(&x, &y);
       if (x>=0 && x<SCREEN_WIDTH&& y>=0 && y<SCREEN_HEIGHT) {

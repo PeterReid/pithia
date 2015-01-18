@@ -193,9 +193,11 @@ impl UiRunner {
                 self.cursor_y = row;
                 return InputEventTranslation::Actual(3, 0);
             }
-            x => {
-                println!("{}", x);
-                return InputEventTranslation::NoOp;
+            InputEvent::KeyDown(glyphcode) => {
+                return InputEventTranslation::Actual(4, glyphcode);
+            }
+            InputEvent::KeyUp(glyphcode) => {
+                return InputEventTranslation::Actual(5, glyphcode);
             }
         }
     }
