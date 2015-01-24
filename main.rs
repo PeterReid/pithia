@@ -6,8 +6,9 @@ extern crate gridui;
 
 extern crate "mips_cpu" as mips;
 
-use std::io::{IoResult, File};
+use std::io::{IoResult, File, MemWriter};
 
+use std::iter::range_step;
 use std::rand::{Rng, OsRng};
 
 use mips::cpu::{MipsCpu, FaultType};
@@ -107,10 +108,28 @@ impl UiRunner {
         }
     }
     
+    fn read_hash_from_cpu_memory(&mut self, address_base: u32) -> Vec<u8> {
+        let hash_bytes = 64u32;
+        let mut w = MemWriter::with_capacity(hash_bytes as uint);
+        for address in range_step(address_base, address_base+hash_bytes, 4) {
+            w.write_le_u32(self.cpu.read_mem(address));
+        }
+        return w.into_inner();
+    }
+    
+    fn load_from_cache(&mut self, hash: Vec<u8>) -> Result<Vec<u8>, ()> {
+        Err( () )
+    }
+    
+    fn write_to_memory(&mut self, address: u32, bytes: &[u8]) {
+        
+    }
+    
     fn dispatch_syscall(&mut self) -> Option<ApplicationException> {
         println!("Issued syscall: {}", self.cpu.regs[2]);
         let syscall_number = self.cpu.regs[2];
         let syscall_arg = self.cpu.regs[3];
+        let syscall_arg_2 = self.cpu.regs[4];
         match syscall_number {
             1 => { // Show screen
                 let address_base = syscall_arg;
@@ -160,6 +179,21 @@ impl UiRunner {
             }
             5 => { // Get random u32
                 self.cpu.regs[2] = self.rng.next_u32();
+                None
+            }
+            6 => { // Load from cache
+                let hash_address = syscall_arg;
+                let destination_address = syscall_arg_2;
+                let hash = self.read_hash_from_cpu_memory(hash_address);
+                match self.load_from_cache(hash) {
+                    Err(_) => {
+                        self.cpu.regs[2] = 0;
+                    }
+                    Ok(contents) => {
+                        self.write_to_memory(destination_address, contents.as_slice());
+                        self.cpu.regs[2] = 1;
+                    }
+                }
                 None
             }
             _ => {
