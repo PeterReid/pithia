@@ -1,20 +1,22 @@
+#![feature(std_misc, io, fs, rand, core)]
 
-#![feature(globs, phase, macro_rules)]
 
-#[phase(plugin, link)]
+#[macro_use]
 extern crate gridui;
 
 extern crate "mips_cpu" as mips;
 
-use std::io::{IoResult, File, MemWriter};
+use std::old_io::{IoResult, MemWriter};
+use std::fs::File;
+use std::io::Read;
 
 use std::iter::range_step;
 use std::rand::{Rng, OsRng};
 
 use mips::cpu::{MipsCpu, FaultType};
-use std::io::timer::Timer;
+use std::old_io::timer::Timer;
 use std::time::Duration;
-use std::comm::{Select};
+use std::sync::mpsc::{Select};
 
 use gridui::gridui::{InputEvent, Glyph, WindowsGridUi, Screen, GridUiInterface};
 
@@ -22,13 +24,13 @@ use gridui::gridui::{InputEvent, Glyph, WindowsGridUi, Screen, GridUiInterface};
 fn place_code(cpu: &mut MipsCpu, code: &[u8], index: u32) {
     // Assumed code length is a multiple of 4
     for (offset, chunk) in code.chunks(4).enumerate() {
-        let val = (chunk[0] as u32) | (chunk[1] as u32 << 8) | (chunk[2] as u32 << 16) | (chunk[3] as u32 << 24);
+        let val = (chunk[0] as u32) | ((chunk[1] as u32) << 8) | ((chunk[2] as u32) << 16) | ((chunk[3] as u32) << 24);
         cpu.set_mem(index + 4*(offset as u32), val);
     }
 }
 
 // Things that the application can do wrong to get it crashed
-#[deriving(Show)]
+#[derive(Debug)]
 enum ApplicationException {
     InvalidSyscall,
     ScreenTooBig,
@@ -62,7 +64,7 @@ impl UiRunner {
         
         let mut cpu = MipsCpu::new();
         
-        place_code(&mut cpu, code.as_slice(), 0);
+        place_code(&mut cpu, &code[], 0);
         
         Ok(UiRunner {
             ui: ui,
@@ -80,11 +82,11 @@ impl UiRunner {
     fn run(&mut self) {
         loop {
             if let Some(interrupt) = self.cpu.run(800000) {
-                println!("Interrupt: {}", interrupt);
+                println!("Interrupt: {:?}", interrupt);
                 match interrupt {
                     FaultType::Syscall => {
                         if let Some(error) = self.dispatch_syscall() {
-                            println!("CPU halting executing with {}", error);
+                            println!("CPU halting executing with {:?}", error);
                             break;
                         }
                         self.cpu.clear_fault();
@@ -110,9 +112,9 @@ impl UiRunner {
     
     fn read_hash_from_cpu_memory(&mut self, address_base: u32) -> Vec<u8> {
         let hash_bytes = 64u32;
-        let mut w = MemWriter::with_capacity(hash_bytes as uint);
+        let mut w = MemWriter::with_capacity(hash_bytes as usize);
         for address in range_step(address_base, address_base+hash_bytes, 4) {
-            w.write_le_u32(self.cpu.read_mem(address));
+            w.write_le_u32(self.cpu.read_mem(address)).ok().expect("Failed to store hash from CPU memory");
         }
         return w.into_inner();
     }
@@ -143,16 +145,16 @@ impl UiRunner {
                     return Some(ApplicationException::ScreenTooBig);
                 }
                 let glyph_address_base = address_base + 8;
-                let glyphs = Vec::from_fn(size as uint, |idx| {
+                let glyphs = (0..size as usize).map(|idx| {
                     let glyph_start_address = glyph_address_base + (idx as u32)*12;
                     Glyph {
                         character: self.cpu.read_mem(glyph_start_address),
                         foreground: self.cpu.read_mem(glyph_start_address + 4),
                         background: self.cpu.read_mem(glyph_start_address + 8),
                     }
-                });
+                }).collect();
                 self.ui.send_screen(Screen{
-                    width: width as uint,
+                    width: width,
                     glyphs: glyphs
                 });
                 None
@@ -190,7 +192,7 @@ impl UiRunner {
                         self.cpu.regs[2] = 0;
                     }
                     Ok(contents) => {
-                        self.write_to_memory(destination_address, contents.as_slice());
+                        self.write_to_memory(destination_address, &contents[]);
                         self.cpu.regs[2] = 1;
                     }
                 }
@@ -254,7 +256,7 @@ impl UiRunner {
                 (ret == rx1.id(), ret==rx2.id())
             };
             if event_ready {
-                let event = self.ui.input_event_source.recv();
+                let event = self.ui.input_event_source.recv().ok().expect("Failed to get input event from UI");
                 
                 match self.translate_input_event(event) {
                     InputEventTranslation::Actual(a, b) => { return Some((a, b));}
@@ -278,6 +280,8 @@ fn run_window(code: Vec<u8>) {
 }
 
 fn main() {
-    let contents = File::open(&Path::new("page.bin")).read_to_end().unwrap_or_else(|_| { panic!("Could not read MIPS code"); } );
+    let mut code_file = File::open("page.bin").ok().expect("Failed to open page.bin");
+    let mut contents = Vec::new();
+    code_file.read_to_end(&mut contents).unwrap_or_else(|_| { panic!("Could not read MIPS code"); } );
     run_window(contents);
 }
