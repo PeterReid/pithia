@@ -1,12 +1,23 @@
+#![feature(io, fs)]
 
-use std::io::{File, Open, Write};
+use std::fs::File;
+use std::io::{Read, Write};
+
+fn encode_u32_le(x: u32) -> Vec<u8> {
+    [((x>> 0) & 0xff) as u8,
+     ((x>> 8) & 0xff) as u8,
+     ((x>>16) & 0xff) as u8,
+     ((x>>24) & 0xff) as u8].to_vec()
+}
 
 fn main() {
     let elf_path = "withmain";
-    let elf_contents = File::open(&Path::new(elf_path)).read_to_end().unwrap_or_else(|_| { panic!("Could not read ELF code"); } );
+    let mut elf_contents = Vec::new();
+    File::open(elf_path).ok().expect("Could not open ELF").read_to_end(&mut elf_contents).unwrap_or_else(|_| { panic!("Could not read ELF code"); } );
     
     let loader_path = "loader.bin";
-    let mut loader_contents = File::open(&Path::new(loader_path)).read_to_end().unwrap_or_else(|_| { panic!("Could not read ELF code"); } );
+    let mut loader_contents = Vec::new();
+    File::open(loader_path).ok().expect("Could not open loader.bin").read_to_end(&mut loader_contents).unwrap_or_else(|_| { panic!("Could not read ELF code"); } );
     
     let elf_offset = loader_contents.len() + 4;
     if elf_offset > 1000 {
@@ -15,14 +26,22 @@ fn main() {
     if elf_contents.len() >= 0x0400000 {
         panic!("This ELF is too long! The loader needs to do something fancy to not write over itself");
     }
-    loader_contents[0] = (elf_offset & 0xff) as u8;
-    loader_contents[1] = ((elf_offset>>8) & 0xff) as u8;
+    let mut found_elf_jumps = 0;
+    for chunk in loader_contents[].chunks_mut(4) {
+        println!("{:?}", chunk);
+        if chunk[3] == 0x24 && chunk[2]==0x04 && chunk[1] == 0x12 && chunk[0] == 0x34 {
+            
+            found_elf_jumps += 1;
+            
+            chunk[0] = (elf_offset & 0xff) as u8;
+            chunk[1] = ((elf_offset>>8) & 0xff) as u8;
+        }
+    }
+    assert!(found_elf_jumps==1, "Expected exactly one special jump!");
     
-    let output_path = Path::new("withmain-binned.bin");
-
-    let mut output = File::open_mode(&output_path, Open, Write)
+    let mut output = File::create("withmain-binned.bin")
         .unwrap_or_else(|e| { panic!("Could not open output file: {}", e); });
-    output.write(loader_contents.as_slice()).unwrap_or_else(|_| { panic!("Failed to write loader"); } );
-    output.write_le_u32(elf_contents.len() as u32).unwrap_or_else(|_| { panic!("Failed to write ELF length"); } );
-    output.write(elf_contents.as_slice()).unwrap_or_else(|_| { panic!("Failed to write ELF"); } );
+    output.write_all(&loader_contents[]).unwrap_or_else(|_| { panic!("Failed to write loader"); } );
+    output.write_all(&encode_u32_le(elf_contents.len() as u32)[]).unwrap_or_else(|_| { panic!("Failed to write ELF length"); } );
+    output.write_all(&elf_contents[]).unwrap_or_else(|_| { panic!("Failed to write ELF"); } );
 }

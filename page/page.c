@@ -299,7 +299,8 @@ int __start() {
   uint32_t line_width = 16;
   
   const uint8_t *resizing_around = 0;
-  const uint8_t *text_cursor = file_contents + 1;
+  const uint8_t *text_cursor = *(const uint8_t **)(12); // The address of the text content begin, where we want to put our text cursor, will be written in byte 12 of the bootloader.
+  
   while(1) {
     draw_text_wrappingly(&s, text_cursor, 1,1, line_width,s.height-2);
     display_screen(&s.width);

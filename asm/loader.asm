@@ -1,7 +1,18 @@
 # This is meant to be repositionable, so don't use J -- just do BEQ so it uses relative addresses
 
+# I am putting a little preamble here in which we will store the payload address/length.
+# This is only temporary, until the bootloader works. Once that is done, this will be
+# baked with the ELF. Or maybe we can skip the ELF preprocessing step if we combine the ELF
+# loading with the bootloader? This is tiny enough that it wouldn't really matter.
+
+or $t0, $t0, $t0 # todo: replace with a harmless signature
+beq $t0, $t0, top
+nop
+nop # address of payload goes here
+nop # address of 
+
 top:
-li $a0, 8 # load base address of the ELF
+li $a0, 0x1234 # load base address of the ELF
 lw $a1, -4($a0)
 
 

@@ -3,5 +3,6 @@ scp mips-build.sh peterreid@%BUILDMACHINE%:~/mipsbuild/mips-build.sh
 ssh peterreid@%BUILDMACHINE% '~/mipsbuild/mips-build.sh'
 scp peterreid@%BUILDMACHINE%:~/mipsbuild/out page.elf
 cp page.elf withmain
-elf-to-bin
+..\asm\elf-to-bin
 cp withmain-binned.bin ../page.bin
+copy /y withmain-binned.bin ..\..\pithia_static_server\handler\txt

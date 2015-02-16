@@ -8,15 +8,18 @@ extern crate "mips_cpu" as mips;
 
 use std::old_io::{IoResult, MemWriter};
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 
 use std::iter::range_step;
 use std::rand::{Rng, OsRng};
+use std::net::{TcpListener, TcpStream};
 
 use mips::cpu::{MipsCpu, FaultType};
 use std::old_io::timer::Timer;
 use std::time::Duration;
 use std::sync::mpsc::{Select};
+
+use std::io;
 
 use gridui::gridui::{InputEvent, Glyph, WindowsGridUi, Screen, GridUiInterface};
 
@@ -24,7 +27,10 @@ use gridui::gridui::{InputEvent, Glyph, WindowsGridUi, Screen, GridUiInterface};
 fn place_code(cpu: &mut MipsCpu, code: &[u8], index: u32) {
     // Assumed code length is a multiple of 4
     for (offset, chunk) in code.chunks(4).enumerate() {
-        let val = (chunk[0] as u32) | ((chunk[1] as u32) << 8) | ((chunk[2] as u32) << 16) | ((chunk[3] as u32) << 24);
+        let val = (chunk[0] as u32) 
+            | (if chunk.len()>1 {((chunk[1] as u32) << 8)  } else { 0 } )
+            | (if chunk.len()>2 {((chunk[2] as u32) << 16) } else { 0 } )
+            | (if chunk.len()>3 {((chunk[3] as u32) << 24) } else { 0 } );
         cpu.set_mem(index + 4*(offset as u32), val);
     }
 }
@@ -132,6 +138,9 @@ impl UiRunner {
         let syscall_number = self.cpu.regs[2];
         let syscall_arg = self.cpu.regs[3];
         let syscall_arg_2 = self.cpu.regs[4];
+        
+        println!("at 6720: {}", self.cpu.read_mem(6720));
+        println!("at 16: {}", self.cpu.read_mem(16));
         match syscall_number {
             1 => { // Show screen
                 let address_base = syscall_arg;
@@ -279,9 +288,52 @@ fn run_window(code: Vec<u8>) {
     uirunner.run();
 }
 
+fn read_exactly<R: Read>(source: &mut R, len: usize) -> io::Result<Vec<u8>> {
+    println!("Attempting to read {} bytes", len);
+    let mut dest : Vec<u8> = Vec::new();
+    dest.resize(len, 0u8);
+    let mut read_count: usize = 0;
+    while read_count < len {
+        let this_read_count = try!(source.read(&mut dest[read_count..len]));
+        if this_read_count==0 {
+            return Err(io::Error::new(io::ErrorKind::Other, "Not enough bytes to read", None));
+        }
+        read_count += this_read_count;
+    }
+    println!("Reading complete!");
+    Ok( dest )
+}
+
+fn encode_u16_le(dest: &mut[u8], x: u32) {
+    dest[0] = ((x>>0) & 0xff) as u8;
+    dest[1] = ((x>>8) & 0xff) as u8;
+}
+
+fn decode_u32_le(dest: &[u8]) -> u32 {
+    return (dest[0] as u32) 
+        | ((dest[1] as u32) << 8)
+        | ((dest[2] as u32) << 16)
+        | ((dest[3] as u32) << 24);
+}
+
+fn download_code_crudely() -> io::Result<Vec<u8>> {
+    let mut stream = TcpStream::connect("127.0.0.1:5692").unwrap();
+    let mut prefixed_url = b"\0\0pia1:abcdefg@127.0.0.1/decl.txt".to_vec();
+    let url_len = prefixed_url.len() - 2;
+    encode_u16_le(&mut prefixed_url[0..2], url_len as u32);
+    println!("Going to write {:?}", prefixed_url);
+    stream.write_all(&prefixed_url[]);
+    println!("Wrote URL");
+    let payload_len = decode_u32_le(&try!(read_exactly(&mut stream, 4))[]);
+    Ok( try!(read_exactly(&mut stream, payload_len as usize)) )
+}
+
 fn main() {
-    let mut code_file = File::open("page.bin").ok().expect("Failed to open page.bin");
-    let mut contents = Vec::new();
-    code_file.read_to_end(&mut contents).unwrap_or_else(|_| { panic!("Could not read MIPS code"); } );
+    //let mut code_file = File::open("page.bin").ok().expect("Failed to open page.bin");
+    let mut contents = download_code_crudely().ok().expect("Failed to download");
+    println!("{:?}", contents);
+    
+    println!("{}", contents[6720]);
+    //code_file.read_to_end(&mut contents).unwrap_or_else(|_| { panic!("Could not read MIPS code"); } );
     run_window(contents);
 }
