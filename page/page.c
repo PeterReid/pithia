@@ -67,6 +67,14 @@ static unsigned int rand_u32() {
   return res;
 }
 
+static void navigate_to(const uint32_t *url, uint32_t glyph_count) {
+  __asm volatile("addiu $2, $0, 7\n\t" // Prepare for syscall 6
+        "move $3, %0\n\t" // set maximum timeout
+        "move $4, %1\n\t" // set maximum timeout
+        "syscall\n\t"
+        : : "r"(url), "r"(glyph_count) : "$2", "$3", "$4");
+}
+
 typedef struct glyph {
   int ch;
   int fg;
@@ -112,7 +120,7 @@ uint8_t file_contents[] = "\0" // leading 0 stops lookback from overrunning
   "Abraham Lincoln\n"
   "November 19, 1863"
   ;
-
+#define INVALID_GLYPHCODE 999
 uint32_t unicode_to_glyphcode(uint32_t unicode) {
   if( unicode>='0' && unicode<='9' ){
     return unicode - (uint32_t)'0' + 10;
@@ -131,9 +139,9 @@ uint32_t unicode_to_glyphcode(uint32_t unicode) {
     case'\\': return 6;
     case ':': return 7;
     case ';': return 8;
-    case '~': return 9;
+    case '@': return 9;
   }
-  return 999;
+  return INVALID_GLYPHCODE;
 }
 
 const uint8_t *first_utf8(const uint8_t *text, uint32_t *dest) {
@@ -164,7 +172,7 @@ const uint8_t *draw_text_wrappingly(
   uint32_t last_after_whitespace_x = 0;
   uint32_t glyphcode;
   
-  if( *text==0 ) return text; // end of document
+  if( *text==0 || width==0 ) return text; // end of document
   
   right = left + width;
   bottom = top + height;
@@ -284,6 +292,23 @@ const uint8_t *previous_line(const uint8_t *text, uint32_t line_width){
   return line_begin;
 }
 
+void follow_utf8_url(const uint8_t *utf8) {
+  uint32_t url_glyphs[256];
+  uint32_t glyph_count = 0;
+  
+  while( glyph_count<255 ){
+    uint32_t codepoint;
+    utf8 = first_utf8(utf8, &codepoint);
+    
+    uint32_t glyphcode = unicode_to_glyphcode(codepoint);
+    if( glyphcode==INVALID_GLYPHCODE ) break;
+    
+    url_glyphs[glyph_count++] = glyphcode;
+  }
+  url_glyphs[glyph_count] = 0;
+  
+  navigate_to(url_glyphs, glyph_count);
+}
 
 int __start() {
   screen s;
@@ -300,11 +325,23 @@ int __start() {
   
   const uint8_t *resizing_around = 0;
   const uint8_t *text_cursor = *(const uint8_t **)(12); // The address of the text content begin, where we want to put our text cursor, will be written in byte 12 of the bootloader.
+  int first_round = 1;
+  input_event resize_event = {.type = INPUT_EVENT_RESIZE, .param=0};
+  
+  
   
   while(1) {
     draw_text_wrappingly(&s, text_cursor, 1,1, line_width,s.height-2);
     display_screen(&s.width);
-    input_event evt = get_input();
+    input_event evt;
+    if( first_round ){
+      first_round = 0;
+     // evt = get_input();
+      evt.type = INPUT_EVENT_RESIZE;
+      evt.param = 0;
+    } else {
+      evt = get_input();
+    }
     if( evt.type==INPUT_EVENT_KEYDOWN ){
       if( evt.param==(0x1000|(('s'-'a')<<4)) ){
         const uint8_t *next = next_line(text_cursor, line_width);
@@ -313,14 +350,16 @@ int __start() {
       }else if( evt.param==(0x1000|(('w'-'a')<<4))){
         text_cursor = previous_line(text_cursor, line_width);
         resizing_around = 0;
+      }else if( evt.param==(0x1000|(('g'-'a')<<4))) {
+        follow_utf8_url(text_cursor);
       }
     }else if( evt.type==INPUT_EVENT_RESIZE ){
       uint32_t screen_width, screen_height;
       get_screen_size(&screen_width, &screen_height);
       if( screen_height>SCREEN_HEIGHT ) screen_height = SCREEN_HEIGHT;
       if( screen_width>SCREEN_WIDTH ) screen_width = SCREEN_WIDTH;
-      s.width = screen_width>SCREEN_WIDTH ? SCREEN_WIDTH : screen_width;
-      s.height = screen_height>SCREEN_HEIGHT ? SCREEN_HEIGHT : screen_height;
+      s.width = screen_width>SCREEN_WIDTH ? SCREEN_WIDTH : screen_width < 5 ? 5 : screen_width;
+      s.height = screen_height>SCREEN_HEIGHT ? SCREEN_HEIGHT : screen_height==0 ? 1 : screen_height;
       line_width = s.width-4;
       fill_rect(&s, 0,0, s.width,s.height, 0, 0xffffff);
       
@@ -334,7 +373,6 @@ int __start() {
       const uint8_t *rounded_up = next_line(rounded_back, line_width);
       text_cursor = rounded_up <= text_cursor ? rounded_up : rounded_back;
     }
-    
   }
   
   while(1) {

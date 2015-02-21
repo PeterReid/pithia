@@ -22,7 +22,7 @@ use std::sync::mpsc::{Select};
 use std::io;
 
 use gridui::gridui::{InputEvent, Glyph, WindowsGridUi, Screen, GridUiInterface};
-
+use gridui::glyphcode;
 
 fn place_code(cpu: &mut MipsCpu, code: &[u8], index: u32) {
     // Assumed code length is a multiple of 4
@@ -35,6 +35,13 @@ fn place_code(cpu: &mut MipsCpu, code: &[u8], index: u32) {
     }
 }
 
+fn encode_u32_le(dest: &mut[u8], x: u32) {
+    dest[0] = ((x>> 0) & 0xff) as u8;
+    dest[1] = ((x>> 8) & 0xff) as u8;
+    dest[2] = ((x>>16) & 0xff) as u8;
+    dest[3] = ((x>>24) & 0xff) as u8;
+}
+
 // Things that the application can do wrong to get it crashed
 #[derive(Debug)]
 enum ApplicationException {
@@ -42,6 +49,7 @@ enum ApplicationException {
     ScreenTooBig,
     UnalignedScreenMemory,
     ClosedByUi,
+    OverlongURL,
 }
 
 struct UiRunner {
@@ -65,14 +73,14 @@ enum InputEventTranslation {
 
 const MAXIMUM_SCREEN_MEMORY : u32 = 400*400;
 impl UiRunner {
-    fn new(code: Vec<u8>) -> IoResult<UiRunner> {
+    fn new(initial_url: Vec<u32>) -> IoResult<UiRunner> {
         let ui = WindowsGridUi::new();
         
         let mut cpu = MipsCpu::new();
         
-        place_code(&mut cpu, &code[], 0);
+        //place_code(&mut cpu, &code[], 0);
         
-        Ok(UiRunner {
+        let mut runner = UiRunner {
             ui: ui,
             cpu: cpu,
             screen_width: 0,
@@ -82,7 +90,11 @@ impl UiRunner {
             cursor_y: 0,
             rng: try!(OsRng::new()),
             timer: try!(Timer::new()),
-        })
+        };
+        
+        runner.load_url(&initial_url[]);
+        
+        Ok(runner)
     }
     
     fn run(&mut self) {
@@ -131,6 +143,42 @@ impl UiRunner {
     
     fn write_to_memory(&mut self, address: u32, bytes: &[u8]) {
         
+    }
+    
+    fn try_load_url(&mut self, url: &[u32]) -> io::Result<()> {
+    
+        let mut stream = TcpStream::connect("127.0.0.1:5692").unwrap();
+        let mut prefixed_url : Vec<u8> = Vec::new();
+        prefixed_url.resize(2 + url.len()*4, 0u8);
+        encode_u16_le(&mut prefixed_url[0..2], url.len() as u16);
+        for (glyph, byte_chunk) in url.iter().zip(prefixed_url[2..].chunks_mut(4)) {
+            encode_u32_le(&mut *byte_chunk, *glyph);
+        }
+        println!("Going to write {:?}", prefixed_url);
+        stream.write_all(&prefixed_url[]);
+        println!("Wrote URL");
+        let payload_len = decode_u32_le(&try!(read_exactly(&mut stream, 4))[]);
+        println!("Payload len = {}", payload_len);
+        let payload = try!(read_exactly(&mut stream, payload_len as usize));
+        
+        self.cpu = MipsCpu::new();
+        place_code(&mut self.cpu, &payload[], 0);
+        
+        Ok( () )
+    }
+    
+    fn load_url(&mut self, url: &[u32]) {
+        if let Err(_) = self.try_load_url(url) {
+            println!("Error loading url! {:?}", url);
+        }
+    }
+    
+    fn read_memory_words(&mut self, offset: u32, count: u32) -> Vec<u32> {
+        let mut words = Vec::new();
+        for address in range_step(offset, offset+count*4, 4) {
+            words.push(self.cpu.read_mem(address));
+        }
+        words
     }
     
     fn dispatch_syscall(&mut self) -> Option<ApplicationException> {
@@ -207,6 +255,19 @@ impl UiRunner {
                 }
                 None
             }
+            7 => {
+                println!("Following a URL");
+                let url_memory_address = syscall_arg;
+                let url_glyph_count = syscall_arg_2;
+                
+                if url_glyph_count > 0xffff {
+                    Some(ApplicationException::OverlongURL)
+                } else {
+                    let url = self.read_memory_words(url_memory_address, url_glyph_count);
+                    self.load_url(&url[]);
+                    None
+                }
+            }
             _ => {
                 // Maybe crash the application here?
                 println!("Unrecognized syscall: {}", syscall_number);
@@ -281,8 +342,8 @@ impl UiRunner {
     }
 }
 
-fn run_window(code: Vec<u8>) {
-    let mut uirunner = UiRunner::new(code).unwrap_or_else(|e| {
+fn run_window(initial_url: Vec<u32>) {
+    let mut uirunner = UiRunner::new(initial_url).unwrap_or_else(|e| {
         panic!("Failed to initialize UI runner: {}", e);
     });
     uirunner.run();
@@ -304,7 +365,7 @@ fn read_exactly<R: Read>(source: &mut R, len: usize) -> io::Result<Vec<u8>> {
     Ok( dest )
 }
 
-fn encode_u16_le(dest: &mut[u8], x: u32) {
+fn encode_u16_le(dest: &mut[u8], x: u16) {
     dest[0] = ((x>>0) & 0xff) as u8;
     dest[1] = ((x>>8) & 0xff) as u8;
 }
@@ -315,7 +376,7 @@ fn decode_u32_le(dest: &[u8]) -> u32 {
         | ((dest[2] as u32) << 16)
         | ((dest[3] as u32) << 24);
 }
-
+/*
 fn download_code_crudely() -> io::Result<Vec<u8>> {
     let mut stream = TcpStream::connect("127.0.0.1:5692").unwrap();
     let mut prefixed_url = b"\0\0pia1:abcdefg@127.0.0.1/decl.txt".to_vec();
@@ -327,13 +388,16 @@ fn download_code_crudely() -> io::Result<Vec<u8>> {
     let payload_len = decode_u32_le(&try!(read_exactly(&mut stream, 4))[]);
     Ok( try!(read_exactly(&mut stream, payload_len as usize)) )
 }
+*/
 
 fn main() {
-    //let mut code_file = File::open("page.bin").ok().expect("Failed to open page.bin");
-    let mut contents = download_code_crudely().ok().expect("Failed to download");
-    println!("{:?}", contents);
+    let mut code_file = File::open("page.bin").ok().expect("Failed to open page.bin");
+    let mut contents = Vec::new();//download_code_crudely().ok().expect("Failed to download");
+    //println!("{:?}", contents);
     
-    println!("{}", contents[6720]);
-    //code_file.read_to_end(&mut contents).unwrap_or_else(|_| { panic!("Could not read MIPS code"); } );
-    run_window(contents);
+    let url_glyphs = glyphcode::from_str("pia1:abcdefg@127.0.0.1/menu.txt".as_slice()).expect("Failed to convert initial url to glyphcode");
+    
+    //println!("{}", contents[6720]);
+    code_file.read_to_end(&mut contents).unwrap_or_else(|_| { panic!("Could not read MIPS code"); } );
+    run_window(url_glyphs);
 }
