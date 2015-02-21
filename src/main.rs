@@ -3,7 +3,7 @@
 
 #[macro_use]
 extern crate gridui;
-
+extern crate time;
 extern crate "mips_cpu" as mips;
 
 use std::old_io::{IoResult, MemWriter};
@@ -18,6 +18,8 @@ use mips::cpu::{MipsCpu, FaultType};
 use std::old_io::timer::Timer;
 use std::time::Duration;
 use std::sync::mpsc::{Select};
+
+use time::SteadyTime;
 
 use std::io;
 
@@ -62,6 +64,7 @@ struct UiRunner {
     cursor_down: bool,
     cursor_x: u32,
     cursor_y: u32,
+    start_time: SteadyTime,
 }
 
 enum InputEventTranslation {
@@ -90,6 +93,7 @@ impl UiRunner {
             cursor_y: 0,
             rng: try!(OsRng::new()),
             timer: try!(Timer::new()),
+            start_time: SteadyTime::now(),
         };
         
         runner.load_url(&initial_url[]);
@@ -100,6 +104,8 @@ impl UiRunner {
     fn run(&mut self) {
         // TODO: Flush message pump. This will help an initial run be indistinguishable from a later run...
         // otherwise, the initial resize event would be received only for an initial run.
+        
+        self.start_time = SteadyTime::now();
         
         loop {
             if let Some(interrupt) = self.cpu.run(800000) {
@@ -190,8 +196,6 @@ impl UiRunner {
         let syscall_arg = self.cpu.regs[3];
         let syscall_arg_2 = self.cpu.regs[4];
         
-        println!("at 6720: {}", self.cpu.read_mem(6720));
-        println!("at 16: {}", self.cpu.read_mem(16));
         match syscall_number {
             1 => { // Show screen
                 let address_base = syscall_arg;
@@ -270,6 +274,12 @@ impl UiRunner {
                     self.load_url(&url[]);
                     None
                 }
+            }
+            8 => {
+                println!("Getting the millisecond");
+                let time_spent = SteadyTime::now() - self.start_time;
+                self.cpu.regs[2] = time_spent.num_milliseconds() as u32;
+                None
             }
             _ => {
                 // Maybe crash the application here?
@@ -394,13 +404,7 @@ fn download_code_crudely() -> io::Result<Vec<u8>> {
 */
 
 fn main() {
-    let mut code_file = File::open("page.bin").ok().expect("Failed to open page.bin");
-    let mut contents = Vec::new();//download_code_crudely().ok().expect("Failed to download");
-    //println!("{:?}", contents);
+    let url_glyphs = glyphcode::from_str("pia1:abcdefg@127.0.0.1/tetris".as_slice()).expect("Failed to convert initial url to glyphcode");
     
-    let url_glyphs = glyphcode::from_str("pia1:abcdefg@127.0.0.1/menu.txt".as_slice()).expect("Failed to convert initial url to glyphcode");
-    
-    //println!("{}", contents[6720]);
-    code_file.read_to_end(&mut contents).unwrap_or_else(|_| { panic!("Could not read MIPS code"); } );
     run_window(url_glyphs);
 }

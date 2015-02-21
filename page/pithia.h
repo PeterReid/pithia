@@ -35,12 +35,13 @@ static input_event get_input() {
   return evt; 
 }
 
-static input_event get_input_with_timeout(unsigned int timeout) {
+static input_event get_input_with_timeout(uint32_t timeout) {
   input_event evt;
   __asm volatile("addiu $2, $0, 2\n\t" // Prepare for syscall 2
-        "move $3, %1\n\t" // set maximum timeout
+        "move $3, %2\n\t" // set maximum timeout
         "syscall\n\t"
         "addu %0, $2, $0\n\t"
+        "addu %1, $3, $0\n\t"
         : "=r"(evt.type), "=r"(evt.param) : "r"(timeout) : "$2", "$3");
   return evt; 
 }
@@ -90,4 +91,14 @@ static void navigate_to(const uint32_t *url, uint32_t glyph_count) {
         "syscall\n\t"
         : : "r"(url), "r"(glyph_count) : "$2", "$3", "$4");
 }
+
+static unsigned int current_milliseconds() {
+  unsigned int res;
+  __asm volatile("addiu $2, $0, 8\n\t" // Prepare for syscall 5
+        "syscall\n\t"
+        "addu %0, $2, $0\n\t"
+        : "=r"(res) : : "$2", "$3");
+  return res;
+}
+
 

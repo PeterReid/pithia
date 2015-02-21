@@ -1,9 +1,8 @@
-scp page.c peterreid@%BUILDMACHINE%:~/mipsbuild/in.c
+scp tetris.c peterreid@%BUILDMACHINE%:~/mipsbuild/in.c
 scp pithia.h peterreid@%BUILDMACHINE%:~/mipsbuild/pithia.h
 scp mips-build.sh peterreid@%BUILDMACHINE%:~/mipsbuild/mips-build.sh
 ssh peterreid@%BUILDMACHINE% '~/mipsbuild/mips-build.sh'
-scp peterreid@%BUILDMACHINE%:~/mipsbuild/out page.elf
-cp page.elf withmain
+scp peterreid@%BUILDMACHINE%:~/mipsbuild/out tetris.elf
+cp tetris.elf withmain
 ..\asm\elf-to-bin
-cp withmain-binned.bin ../page.bin
-copy /y withmain-binned.bin ..\..\pithia_static_server\handler\txt
+copy /y withmain-binned.bin ..\..\pithia_static_server\static\tetris
