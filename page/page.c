@@ -1,95 +1,6 @@
-#include <stdio.h>
+
 #include <stdint.h>
-
-#define INPUT_EVENT_RESIZE 1
-#define INPUT_EVENT_KEYDOWN 4
-typedef struct input_event{
-  uint32_t type;
-  uint32_t param;
-} input_event;
-
-static input_event get_input() {
-  input_event evt;
-  __asm volatile("addiu $2, $0, 2\n\t" // Prepare for syscall 2
-        "not $3, $0\n\t" // set maximum timeout
-        "syscall\n\t"
-        "addu %0, $2, $0\n\t"
-        "addu %1, $3, $0\n\t"
-        : "=r"(evt.type), "=r"(evt.param) : : "$2", "$3");
-  return evt; 
-}
-
-static input_event get_input_with_timeout(unsigned int timeout) {
-  input_event evt;
-  __asm volatile("addiu $2, $0, 2\n\t" // Prepare for syscall 2
-        "move $3, %1\n\t" // set maximum timeout
-        "syscall\n\t"
-        "addu %0, $2, $0\n\t"
-        : "=r"(evt.type), "=r"(evt.param) : "r"(timeout) : "$2", "$3");
-  return evt; 
-}
-
-static void display_screen(int *x) {
-  __asm volatile("addiu $2, $0, 1\n\t" // Prepare for syscall 1
-        "addu $3, %0, $0\n\t"
-        "syscall\n\t"
-        : : "r"(x) : "$2", "$3", "memory");
-}
-
-static void get_cursor_coords(int *x, int *y) {
-  int xval, yval;
-  __asm volatile("addiu $2, $0, 3\n\t" // Prepare for syscall 3
-        "syscall\n\t"
-        "addu %0, $2, $0\n\t"
-        "addu %1, $3, $0\n\t"
-        : "=r"(xval), "=r"(yval): : "$2", "$3");
-  *x = xval;
-  *y = yval;
-}
-
-static void get_screen_size(uint32_t *width, uint32_t *height) {
-  int widthval, heightval;
-  __asm volatile("addiu $2, $0, 4\n\t" // Prepare for syscall 4
-        "syscall\n\t"
-        "addu %0, $2, $0\n\t"
-        "addu %1, $3, $0\n\t"
-        : "=r"(widthval), "=r"(heightval): : "$2", "$3");
-  *width = widthval;
-  *height = heightval;
-}
-
-static unsigned int rand_u32() {
-  unsigned int res;
-  __asm volatile("addiu $2, $0, 5\n\t" // Prepare for syscall 5
-        "syscall\n\t"
-        "addu %0, $2, $0\n\t"
-        : "=r"(res) : : "$2", "$3");
-  return res;
-}
-
-static void navigate_to(const uint32_t *url, uint32_t glyph_count) {
-  __asm volatile("addiu $2, $0, 7\n\t" // Prepare for syscall 6
-        "move $3, %0\n\t" // set maximum timeout
-        "move $4, %1\n\t" // set maximum timeout
-        "syscall\n\t"
-        : : "r"(url), "r"(glyph_count) : "$2", "$3", "$4");
-}
-
-typedef struct glyph {
-  int ch;
-  int fg;
-  int bg;
-} glyph;
-
-#define SCREEN_WIDTH 180
-#define SCREEN_HEIGHT 80
-#define SCREEN_CELLS (SCREEN_WIDTH*SCREEN_HEIGHT)
-
-typedef struct screen {
-  int width;
-  int height;
-  glyph gs[SCREEN_CELLS];
-} screen;
+#include "pithia.h"
 
 uint8_t file_contents[] = "\0" // leading 0 stops lookback from overrunning
   "Four score and seven years ago our fathers brought forth on this continent,"
@@ -310,33 +221,28 @@ void follow_utf8_url(const uint8_t *utf8) {
   navigate_to(url_glyphs, glyph_count);
 }
 
-int __start() {
-  screen s;
+#define SCREEN_WIDTH 180
+#define SCREEN_HEIGHT 80
+#define SCREEN_CELLS (SCREEN_WIDTH*SCREEN_HEIGHT)
 
-  s.width = SCREEN_WIDTH;
-  s.height = SCREEN_HEIGHT;
-  /*for ( i=0; i<SCREEN_CELLS; i++ ){
-    s.gs[i].ch = 10+(i%2);
-    s.gs[i].fg = 0x00ff00;
-    s.gs[i].bg = 0;
-  }*/
+int __start() {
+  uint32_t screen_buffer[SCREEN_U32S_FOR(SCREEN_WIDTH*SCREEN_HEIGHT)];
+  
+  screen *s = (screen *)&screen_buffer;
+
+  s->width = SCREEN_WIDTH;
+  s->height = SCREEN_HEIGHT;
   
   uint32_t line_width = 16;
   
   const uint8_t *resizing_around = 0;
   const uint8_t *text_cursor = *(const uint8_t **)(12); // The address of the text content begin, where we want to put our text cursor, will be written in byte 12 of the bootloader.
   int first_round = 1;
-  input_event resize_event = {.type = INPUT_EVENT_RESIZE, .param=0};
-  
-  
   
   while(1) {
-    draw_text_wrappingly(&s, text_cursor, 1,1, line_width,s.height-2);
-    display_screen(&s.width);
     input_event evt;
     if( first_round ){
       first_round = 0;
-     // evt = get_input();
       evt.type = INPUT_EVENT_RESIZE;
       evt.param = 0;
     } else {
@@ -358,10 +264,10 @@ int __start() {
       get_screen_size(&screen_width, &screen_height);
       if( screen_height>SCREEN_HEIGHT ) screen_height = SCREEN_HEIGHT;
       if( screen_width>SCREEN_WIDTH ) screen_width = SCREEN_WIDTH;
-      s.width = screen_width>SCREEN_WIDTH ? SCREEN_WIDTH : screen_width < 5 ? 5 : screen_width;
-      s.height = screen_height>SCREEN_HEIGHT ? SCREEN_HEIGHT : screen_height==0 ? 1 : screen_height;
-      line_width = s.width-4;
-      fill_rect(&s, 0,0, s.width,s.height, 0, 0xffffff);
+      s->width = screen_width>SCREEN_WIDTH ? SCREEN_WIDTH : screen_width < 5 ? 5 : screen_width;
+      s->height = screen_height>SCREEN_HEIGHT ? SCREEN_HEIGHT : screen_height==0 ? 1 : screen_height;
+      line_width = s->width-4;
+      fill_rect(s, 0,0, s->width,s->height, 0, 0xffffff);
       
       if( resizing_around==0 ){
         resizing_around = text_cursor;
@@ -373,19 +279,22 @@ int __start() {
       const uint8_t *rounded_up = next_line(rounded_back, line_width);
       text_cursor = rounded_up <= text_cursor ? rounded_up : rounded_back;
     }
+    
+    draw_text_wrappingly(s, text_cursor, 1,1, line_width,s->height-2);
+    display_screen(s);
   }
   
   while(1) {
-    display_screen(&s.width);
+    display_screen(s);
     input_event evt = get_input_with_timeout(200);
     
-    s.gs[0].ch = 0x1000 + (evt.type<<4); 
-    s.gs[1].ch = 10 + (rand_u32()%10);
+    s->gs[0].ch = 0x1000 + (evt.type<<4); 
+    s->gs[1].ch = 10 + (rand_u32()%10);
     if (evt.type==2) {
       int x, y;
       get_cursor_coords(&x, &y);
       if (x>=0 && x<SCREEN_WIDTH&& y>=0 && y<SCREEN_HEIGHT) {
-        s.gs[x + y*SCREEN_WIDTH].bg = (s.gs[x + y*SCREEN_WIDTH].bg+0x40) & 0xff;
+        s->gs[x + y*SCREEN_WIDTH].bg = (s->gs[x + y*SCREEN_WIDTH].bg+0x40) & 0xff;
       }
     }
   }
