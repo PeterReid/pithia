@@ -2,35 +2,6 @@
 #include <stdint.h>
 #include "pithia.h"
 
-uint8_t file_contents[] = "\0" // leading 0 stops lookback from overrunning
-  "Four score and seven years ago our fathers brought forth on this continent,"
-  " a new nation, conceived in Liberty, and dedicated to the proposition that "
-  "all men are created equal.\n"
-  "\n"
-  "Now we are engaged in a great civil war, testing whether that nation, or an"
-  "y nation so conceived and so dedicated, can long endure. We are met on a gr"
-  "eat battle-field of that war. We have come to dedicate a portion of that fi"
-  "eld, as a final resting place for those who here gave their lives that that"
-  " nation might live. It is altogether fitting and proper that we should do t"
-  "his.\n"
-  "\n"
-  "But, in a larger sense, we can not dedicate -- we can not consecrate -- we "
-  "can not hallow -- this ground. The brave men, living and dead, who struggle"
-  "d here, have consecrated it, far above our poor power to add or detract. Th"
-  "e world will little note, nor long remember what we say here, but it can ne"
-  "ver forget what they did here. It is for us the living, rather, to be dedic"
-  "ated here to the unfinished work which they who fought here have thus far s"
-  "o nobly advanced. It is rather for us to be here dedicated to the great tas"
-  "k remaining before us -- that from these honored dead we take increased dev"
-  "otion to that cause for which they gave the last full measure of devotion -"
-  "- that we here highly resolve that these dead shall not have died in vain -"
-  "- that this nation, under God, shall have a new birth of freedom -- and tha"
-  "t government of the people, by the people, for the people, shall not perish"
-  " from the earth.\n"
-  "\n"
-  "Abraham Lincoln\n"
-  "November 19, 1863"
-  ;
 #define INVALID_GLYPHCODE 999
 uint32_t unicode_to_glyphcode(uint32_t unicode) {
   if( unicode>='0' && unicode<='9' ){
@@ -71,10 +42,11 @@ void maybe_put_glyph(screen *dest, uint32_t x, uint32_t y, glyph g){
     dest->gs[x + y*dest->width] = g;
   }
 }
-const uint8_t *draw_text_wrappingly(
+const uint8_t *draw_text_wrappingly_ex(
   screen *dest, 
   const uint8_t *text,
-  uint32_t left, uint32_t top, uint32_t width, uint32_t height
+  uint32_t left, uint32_t top, uint32_t width, uint32_t height,
+  uint32_t hit_test_x, uint32_t hit_test_y, const uint8_t **hit_test_result
 ){
   uint32_t x, y;
   uint32_t right, bottom; // exclusive
@@ -97,6 +69,7 @@ const uint8_t *draw_text_wrappingly(
     }
     last_after_whitespace = 0;
     for( x=left; x<right; x++ ){
+      const uint8_t *text_was = text;
       text = first_utf8(text, &unicode);
       if( unicode==0 ){
         // blank out the remaining area
@@ -132,6 +105,9 @@ const uint8_t *draw_text_wrappingly(
         last_after_whitespace = text;
         last_after_whitespace_x = x+1;
       }
+      if( hit_test_result && x==hit_test_x && y==hit_test_y ){
+        *hit_test_result = text_was;
+      }
       maybe_put_glyphcode(dest, x, y, glyphcode);
     }
     
@@ -149,6 +125,13 @@ const uint8_t *draw_text_wrappingly(
   return text;
 }
 
+const uint8_t *draw_text_wrappingly(
+  screen *dest, 
+  const uint8_t *text,
+  uint32_t left, uint32_t top, uint32_t width, uint32_t height
+){
+  return draw_text_wrappingly_ex(dest, text, left, top, width, height, 0,0,0);
+}
 void fill_rect( screen *dest, uint32_t left, uint32_t top, uint32_t w, uint32_t h, uint32_t bg, uint32_t fg ){
   uint32_t x, y;
   glyph g;
@@ -207,12 +190,22 @@ void follow_utf8_url(const uint8_t *utf8) {
   uint32_t url_glyphs[256];
   uint32_t glyph_count = 0;
   
+  // Step backwards until we get off a url-ish character
+  while( 1 ){
+    const uint8_t *prev = previous_utf8(utf8);
+    uint32_t codepoint;
+    first_utf8(prev, &codepoint);
+    uint32_t glyphcode = unicode_to_glyphcode(codepoint);
+    if( glyphcode==INVALID_GLYPHCODE || glyphcode==0 ) break;
+    utf8 = prev;
+  }
+  
   while( glyph_count<255 ){
     uint32_t codepoint;
     utf8 = first_utf8(utf8, &codepoint);
     
     uint32_t glyphcode = unicode_to_glyphcode(codepoint);
-    if( glyphcode==INVALID_GLYPHCODE ) break;
+    if( glyphcode==INVALID_GLYPHCODE || glyphcode==0 ) break;
     
     url_glyphs[glyph_count++] = glyphcode;
   }
@@ -256,8 +249,6 @@ int __start() {
       }else if( evt.param==(0x1000|(('w'-'a')<<4))){
         text_cursor = previous_line(text_cursor, line_width);
         resizing_around = 0;
-      }else if( evt.param==(0x1000|(('g'-'a')<<4))) {
-        follow_utf8_url(text_cursor);
       }
     }else if( evt.type==INPUT_EVENT_RESIZE ){
       uint32_t screen_width, screen_height;
@@ -278,6 +269,14 @@ int __start() {
       const uint8_t *rounded_back = previous_line(resizing_around, line_width);
       const uint8_t *rounded_up = next_line(rounded_back, line_width);
       text_cursor = rounded_up <= text_cursor ? rounded_up : rounded_back;
+    }else if( evt.type==INPUT_EVENT_LEFT_MOUSE_DOWN ){
+      int32_t x, y;
+      get_cursor_coords(&x, &y);
+      const uint8_t *hit = 0;
+      draw_text_wrappingly_ex(s, text_cursor, 1,1, line_width,s->height-2, x, y, &hit);
+      if(hit) {
+        follow_utf8_url(hit);
+      }
     }
     
     draw_text_wrappingly(s, text_cursor, 1,1, line_width,s->height-2);

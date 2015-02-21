@@ -1,6 +1,9 @@
 
 #define INPUT_EVENT_RESIZE 1
+#define INPUT_EVENT_LEFT_MOUSE_DOWN 2
+#define INPUT_EVENT_LEFT_MOUSE_UP 3
 #define INPUT_EVENT_KEYDOWN 4
+
 typedef struct input_event{
   uint32_t type;
   uint32_t param;

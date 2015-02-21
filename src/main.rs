@@ -98,6 +98,9 @@ impl UiRunner {
     }
     
     fn run(&mut self) {
+        // TODO: Flush message pump. This will help an initial run be indistinguishable from a later run...
+        // otherwise, the initial resize event would be received only for an initial run.
+        
         loop {
             if let Some(interrupt) = self.cpu.run(800000) {
                 println!("Interrupt: {:?}", interrupt);
