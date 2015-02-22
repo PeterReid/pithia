@@ -284,6 +284,7 @@ int __start() {
         rotate_left(&faller);
         if( faller_collides() ) rotate_right(&faller);
       }else if( evt.param==(0x1000|(('s'-'a')<<4))){
+        rotate_right(&faller);
         if( faller_collides() ) rotate_left(&faller);
       }else if( evt.param==0 ){
         while( !faller_collides() ){
